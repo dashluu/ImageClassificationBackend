@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 
-class Prediction():
+class Prediction:
     def __init__(self, label, prob_dict) -> None:
         self.label = label
         self.prob_dict = prob_dict

@@ -13,6 +13,7 @@ import torch
 def index(request: Request):
     file = request.FILES['img_file']
     img = Image.open(file)
+    img = img.resize((32, 32)).convert('RGB')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     conv_net = ConvNetCifar10(device).to_device()
     pred = conv_net.predict(img)

@@ -18,7 +18,8 @@ class BaseNet(nn.Module):
     def to_device(self):
         return self.to(self._device)
 
-    def base_train_model(self, train_loader, valid_loader, loss_fn, optim, eporchs, filename=None, verbose=True):
+    def base_train_model(self, train_loader, valid_loader, epochs, loss_fn, optim, scheduler=None, in_batch=False,
+                         filename=None, verbose=True):
         result = TrainResult()
         for label in self._labels:
             result.class_accuracy[label] = 0.
@@ -26,8 +27,8 @@ class BaseNet(nn.Module):
         train_samples_per_class = [0 for i in range(len(self._labels))]
         valid_correct_per_class = [0 for i in range(len(self._labels))]
         valid_samples_per_class = [0 for i in range(len(self._labels))]
-        # Loop through each eporch
-        for i in range(eporchs):
+        # Loop through each epoch
+        for i in range(epochs):
             self.train()
             curr_loss = 0.
             # Train the model
@@ -48,6 +49,12 @@ class BaseNet(nn.Module):
                 loss.backward()
                 # Run the optimizer
                 optim.step()
+                # Run the scheduler if there is one and if it needs to be run inside a batch
+                if in_batch and scheduler:
+                    scheduler.step()
+            # Run the scheduler if there is one and if it needs to be run outside a batch
+            if not in_batch and scheduler:
+                scheduler.step()
             result.train_loss.append(curr_loss)
             self.eval()
             curr_loss = 0.
@@ -75,7 +82,7 @@ class BaseNet(nn.Module):
             result.accuracy += accuracy
             if verbose:
                 print()
-                print(f"Eporch {i + 1} / {eporchs}: training loss = {result.train_loss[-1]: .3f},\
+                print(f"Eporch {i + 1} / {epochs}: training loss = {result.train_loss[-1]: .3f},\
                         validation loss = {result.valid_loss[-1]: .3f},\
                         accuracy = {accuracy: .3f}%")
             # If the current total loss is smaller than the previous total loss, save the updated model to the file
@@ -85,17 +92,17 @@ class BaseNet(nn.Module):
                 torch.save(self.state_dict(), filename)
                 prev_loss = curr_loss
         # Compute the mean accuracy
-        result.accuracy /= eporchs
+        result.accuracy /= epochs
         for k in range(len(self._labels)):
             # Compute the accuracy per class
             result.class_accuracy[self._labels[k]] = round(
                 valid_correct_per_class[k] / valid_samples_per_class[k] * 100, 3)
             # Get the distribution per class for the training set
             result.class_dist.train_dist[self._labels[k]] = round(
-                (train_samples_per_class[k] / len(train_loader.dataset) * 100 / eporchs), 3)
+                (train_samples_per_class[k] / len(train_loader.dataset) * 100 / epochs), 3)
             # Get the distribution per class for the validation set
             result.class_dist.valid_dist[self._labels[k]] = round(
-                (valid_samples_per_class[k] / len(valid_loader.dataset) * 100 / eporchs), 3)
+                (valid_samples_per_class[k] / len(valid_loader.dataset) * 100 / epochs), 3)
         return result
 
     def base_test_model(self, test_loader, loss_fn, verbose=True):
@@ -143,9 +150,8 @@ class BaseNet(nn.Module):
         if inference_mode:
             self.eval()
 
-    def base_predict(self, img, transform):
-        m_img = transform(img)
-        m_img = m_img.to(self._device)
+    def base_predict(self, img):
+        m_img = img.to(self._device)
         output = self.forward(m_img)
         softmax = nn.Softmax(dim=1)
         # Get the probability of each class
